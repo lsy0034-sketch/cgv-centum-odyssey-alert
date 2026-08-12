@@ -1,0 +1,38 @@
+name: CGV Daily Heartbeat
+
+on:
+  schedule:
+    # 12:10 UTC = 21:10 KST
+    - cron: "10 12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: cgv-daily-heartbeat
+  cancel-in-progress: false
+
+jobs:
+  daily-status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Daily CGV status
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ASSIGNEE: lsy0034-sketch
+        run: node daily_status.js
