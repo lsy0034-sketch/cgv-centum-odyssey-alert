@@ -1,0 +1,124 @@
+name: CGV Continuous Monitor
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+
+concurrency:
+  group: cgv-continuous-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 250
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Monitor every 5 minutes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ASSIGNEE: lsy0034-sketch
+          TEST_NOTIFICATION: "false"
+          DIAGNOSTIC_ONLY: "false"
+          DIAGNOSTIC_DATE: "20260813"
+        run: |
+          set +e
+
+          echo "======================================================"
+          echo "CGV CONTINUOUS MONITOR STARTED"
+          echo "Target: Centum City IMAX / Odyssey / 2026-08-29,30"
+          echo "Interval: 5 minutes"
+          echo "This run will cover about 4 hours."
+          echo "======================================================"
+
+          consecutive_failures=0
+
+          # 48 checks: immediately, then every 5 minutes (~4 hours total)
+          for i in $(seq 1 48); do
+            cycle_start=$(date +%s)
+            next_start=$((cycle_start + 300))
+
+            echo ""
+            echo "------------------------------------------------------"
+            echo "[CONTINUOUS] cycle $i/48"
+            echo "[CONTINUOUS] UTC: $(date -u '+%Y-%m-%d %H:%M:%S')"
+            echo "[CONTINUOUS] KST: $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M:%S')"
+            echo "------------------------------------------------------"
+
+            node monitor.js
+            rc=$?
+
+            if [ "$rc" -eq 0 ]; then
+              consecutive_failures=0
+              echo "[CONTINUOUS] monitor check succeeded"
+            else
+              consecutive_failures=$((consecutive_failures + 1))
+              echo "[CONTINUOUS][WARN] monitor check failed (consecutive=$consecutive_failures)"
+            fi
+
+            # Run heartbeat roughly hourly.
+            # daily_status.js itself prevents more than one status issue per KST date.
+            if [ "$i" -eq 1 ] || [ $((i % 12)) -eq 0 ]; then
+              echo "[CONTINUOUS] daily heartbeat check"
+              node daily_status.js || true
+            fi
+
+            if [ "$i" -lt 48 ]; then
+              now=$(date +%s)
+              sleep_seconds=$((next_start - now))
+
+              if [ "$sleep_seconds" -gt 0 ]; then
+                echo "[CONTINUOUS] next CGV check in ${sleep_seconds}s"
+                sleep "$sleep_seconds"
+              else
+                echo "[CONTINUOUS][WARN] check took >=300s; starting next cycle immediately"
+              fi
+            fi
+          done
+
+          echo ""
+          echo "[CONTINUOUS] 48 checks completed. Preparing successor run."
+
+      - name: Start successor run
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "[CHAIN] Dispatching the next 4-hour monitoring run..."
+
+          response_file=$(mktemp)
+
+          http_code=$(curl -sS \
+            -o "$response_file" \
+            -w "%{http_code}" \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/continuous.yml/dispatches" \
+            -d "{\"ref\":\"${GITHUB_REF_NAME}\"}")
+
+          echo "[CHAIN] GitHub API HTTP ${http_code}"
+          cat "$response_file" || true
+
+          if [ "$http_code" = "200" ] || [ "$http_code" = "204" ]; then
+            echo "[CHAIN] Successor run requested successfully."
+          else
+            echo "[CHAIN][ERROR] Could not start successor run."
+            exit 1
+          fi
