@@ -1,4 +1,4 @@
-name: CGV Centum Odyssey Monitor
+name: CGV Centum Odyssey Monitor v2
 
 on:
   schedule:
@@ -16,25 +16,35 @@ permissions:
   issues: write
 
 concurrency:
-  group: cgv-centum-odyssey-monitor
-  cancel-in-progress: false
+  group: cgv-centum-odyssey-monitor-v2
+  cancel-in-progress: true
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 4
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
-          python-version: "3.12"
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Diagnose Chrome
+        run: |
+          which google-chrome || which google-chrome-stable || which chromium || true
+          google-chrome --version || google-chrome-stable --version || chromium --version || true
 
       - name: Monitor CGV
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ASSIGNEE: lsy0034-sketch
           TEST_NOTIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.test_notification || 'false' }}
-        run: python monitor.py
+        run: node monitor.js
