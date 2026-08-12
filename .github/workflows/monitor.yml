@@ -1,12 +1,23 @@
-name: CGV Centum Odyssey Monitor v2
+name: CGV Centum Odyssey Monitor v2.1
 
 on:
   schedule:
     - cron: "*/5 * * * *"
+
   workflow_dispatch:
     inputs:
+      diagnostic_only:
+        description: "Diagnostic only (no alert); read a known-open IMAX date"
+        required: true
+        default: true
+        type: boolean
+      diagnostic_date:
+        description: "Diagnostic date (YYYYMMDD)"
+        required: true
+        default: "20260813"
+        type: string
       test_notification:
-        description: "Create a test GitHub Issue notification"
+        description: "Create only a GitHub Issue push test"
         required: false
         default: false
         type: boolean
@@ -32,7 +43,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "24"
-          
+
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
@@ -46,4 +57,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ASSIGNEE: lsy0034-sketch
           TEST_NOTIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.test_notification || 'false' }}
+          DIAGNOSTIC_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_only || 'false' }}
+          DIAGNOSTIC_DATE: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_date || '20260813' }}
         run: node monitor.js
